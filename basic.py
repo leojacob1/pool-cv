@@ -2,7 +2,12 @@ import cv2
 from matplotlib import pyplot as plt
 import numpy as np
 
-image = cv2.imread("table5.jpg", 1)
+table_empty = cv2.imread("table6_empty.jpg", 1)
+# table_empty = cv2.cvtColor(table_empty, cv2.COLOR_BGR2HSV)
+table = cv2.imread("table6.jpg", 1)
+# table = cv2.cvtColor(table, cv2.COLOR_BGR2HSV)
+
+
 cv2.namedWindow('img', cv2.WINDOW_NORMAL)
 
 def getSides(pts):
@@ -40,81 +45,71 @@ def unique_count_app(a):
     colors, count = np.unique(a.reshape(-1,a.shape[-1]), axis=0, return_counts=True)
     return colors[count.argmax()]
 
-tableColorBgr = unique_count_app(getCenter(image, 0.25))
-lower = []
-upper = []
-plusMinus = 80
-for color in tableColorBgr:
-    if color >= plusMinus:
-        lower.append(color - plusMinus)
-    else:
-        lower.append(0)
-    if color <= 256 - plusMinus:
-        upper.append(color + plusMinus)
-    else:
-        upper.append(256)
+def getWarpMatrix(image):
+    tableColorBgr = unique_count_app(getCenter(image, 0.5))
+    lower = []
+    upper = []
+    plusMinus = 40
+    for color in tableColorBgr:
+        if color >= plusMinus:
+            lower.append(color - plusMinus)
+        else:
+            lower.append(0)
+        if color <= 256 - plusMinus:
+            upper.append(color + plusMinus)
+        else:
+            upper.append(256)
 
-lower = np.array(lower)
-upper = np.array(upper)
+    lower = np.array(lower)
+    upper = np.array(upper)
 
-mask = cv2.inRange(image, lower, upper)
-output = cv2.bitwise_and(image, image, mask=mask)
+    mask = cv2.inRange(image, lower, upper)
+    output = cv2.bitwise_and(image, image, mask=mask)
+
+    contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    c = max(contours, key = cv2.contourArea)
+    rect = cv2.minAreaRect(c)
+    box = np.int0(cv2.boxPoints(rect))
+    boxWidth = int(getSides(box)['width'])
+    boxHeight = int(getSides(box)['height'])
+
+    # rows, cols = mask.shape
+    pts1 = np.float32([box[0], box[1], box[2]])
+    pts2 = np.float32([[0, 0], [0, boxHeight], [boxWidth, boxHeight]])
+
+    M = cv2.getAffineTransform(pts1, pts2)
+    return M, boxWidth, boxHeight
+
+M, boxWidth, boxHeight = getWarpMatrix(table_empty)
+background = cv2.warpAffine(table_empty, M, (boxWidth, boxHeight))#[0:int(boxHeight), 0:int(boxWidth)]
+table = cv2.warpAffine(table, M, (boxWidth, boxHeight))#[0:int(boxHeight), 0:int(boxWidth)]
+
+difference = cv2.absdiff(table, background)
+
+lower = np.array([3, 3, 3])
+upper = np.array([255, 255, 255])
+
+mask = cv2.inRange(difference, lower, upper)
+output = cv2.bitwise_and(table, table, mask=mask)
+
+contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+balls = []
+for con in contours:
+    perimeter = cv2.arcLength(con, True)
+    area = cv2.contourArea(con)
+    if perimeter == 0:
+        continue
+    circularity = 4*np.pi*(area/(perimeter*perimeter))
+    if area > 1000 and area < 11000 and circularity > 0.5 and circularity < 1.2:
+        balls.append(con)
+
+cv2.drawContours(output, balls, -1, (0, 255, 0), 6)
+cv2.drawContours(mask, balls, -1, (0, 255, 0), 6)
 
 cv2.imshow('img', mask)
 cv2.waitKey(0)
-cv2.destroyAllWindows()
-
-contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-c = max(contours, key = cv2.contourArea)
-rect = cv2.minAreaRect(c)
-box = np.int0(cv2.boxPoints(rect))
-boxWidth = getSides(box)['width']
-boxHeight = getSides(box)['height']
-
-# cv2.rectangle(output,(x,y),(x+w,y+h),(0,255,0),2)
-# cv2.drawContours(output, [c], 0, (0, 255, 0), 3)
-rows, cols = mask.shape
-pts1 = np.float32([box[0], box[1], box[2]])
-pts2 = np.float32([[0, 0], [0, boxHeight], [boxWidth, boxHeight]])
-
-M = cv2.getAffineTransform(pts1, pts2)
-output = cv2.warpAffine(image, M, (cols, rows))[0:int(boxHeight), 0:int(boxWidth)]
-
-
 cv2.imshow('img', output)
 cv2.waitKey(0)
+
 cv2.destroyAllWindows()
-
-
-# plt.subplot(121),plt.imshow(mask),plt.title('Input')
-# plt.subplot(122),plt.imshow(dst),plt.title('Output')
-# plt.show()
-
-
-# rect = cv2.minAreaRect(c)
-# box = np.int0(cv2.boxPoints(rect))
-# cv2.drawContours(output, [box], 0, (0, 255, 0), 2)
-
-# gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-# cv2.imshow("img", gray)
-# cv2.waitKey(0)
-# cv2.destroyAllWindows()
-# grayHist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-
-# chans = cv2.split(image)
-# colors = ('b', 'g', 'r')
-# plt.figure()
-# plt.title("'Flattened' Color Histogram")
-# plt.xlabel("Bins")
-# plt.ylabel("# of Pixels")
-# features = []
-#
-# for (chan, color) in zip(chans, colors):
-#     hist = cv2.calcHist([chan], [0], None, [16], [0, 256])
-#     features.extend(hist)
-#
-#     plt.plot(hist, color = color)
-#     plt.xlim([0, 16])
-
-# print(f"flattened feature vector size: {np.array(features).flatten().shape}")
-# plt.show()
